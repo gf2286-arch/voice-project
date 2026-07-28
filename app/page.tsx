@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { Sparkles, Plus, ArrowUp } from 'lucide-react'
 import { Sidebar } from '@/components/muse/sidebar'
@@ -12,6 +12,7 @@ import { OutfitHistory } from '@/components/muse/outfit-history'
 import { ShoppingAssistant } from '@/components/muse/shopping-assistant'
 import { Settings } from '@/components/muse/settings'
 import { getStylistResponse, getWeather } from '@/lib/services'
+import { useMuseVoice } from '@/lib/use-muse-voice'
 
 const USER_NAME = 'Gabi'
 
@@ -36,7 +37,6 @@ function greetingFor(date: Date) {
 export default function Page() {
   const [active, setActive] = useState('home')
   const [messages, setMessages] = useState<Message[]>([])
-  const [listening, setListening] = useState(false)
   const [thinking, setThinking] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -54,10 +54,32 @@ export default function Page() {
 
   const started = messages.length > 0
 
+  // Push a raw voice transcript straight into the conversation. The agent is
+  // the stylist here, so voice turns don't run through the mock stylist.
+  const appendMessage = useCallback((role: 'user' | 'muse', text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    setMessages((prev) => [...prev, { id: makeId(), role, text: trimmed }])
+  }, [])
+
+  const voice = useMuseVoice({
+    onUserTranscript: (text) => appendMessage('user', text),
+    onAgentReply: (text) => appendMessage('muse', text),
+  })
+
+  const voiceActive = voice.status !== 'idle'
+  const voiceLabel =
+    voice.status === 'connecting'
+      ? 'Connecting…'
+      : voice.status === 'active'
+        ? voice.isSpeaking
+          ? 'Muse is speaking…'
+          : 'Listening…'
+        : 'Tap to speak'
+
   function sendMessage(text: string) {
     const trimmed = text.trim()
     if (!trimmed) return
-    setListening(false)
     setDraft('')
     setMessages((prev) => [
       ...prev,
@@ -94,8 +116,10 @@ export default function Page() {
       <div className="min-h-screen bg-background text-foreground">
         <Landing
           greeting={`${timeGreeting}, ${USER_NAME}.`}
-          listening={listening}
-          onToggleListening={() => setListening((v) => !v)}
+          listening={voiceActive}
+          statusLabel={voiceLabel}
+          errorMessage={voice.error}
+          onToggleListening={voice.toggle}
           suggestions={SUGGESTIONS}
           onSelectSuggestion={sendMessage}
         />
@@ -209,8 +233,8 @@ export default function Page() {
               ) : (
                 <MicOrb
                   size="sm"
-                  listening={listening}
-                  onClick={() => setListening((v) => !v)}
+                  listening={voiceActive}
+                  onClick={voice.toggle}
                 />
               )}
             </div>

@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 interface LandingProps {
   greeting: string
   listening: boolean
+  statusLabel: string
+  errorMessage?: string | null
   onToggleListening: () => void
   suggestions: string[]
   onSelectSuggestion: (text: string) => void
@@ -14,6 +16,8 @@ interface LandingProps {
 export function Landing({
   greeting,
   listening,
+  statusLabel,
+  errorMessage,
   onToggleListening,
   suggestions,
   onSelectSuggestion,
@@ -46,8 +50,16 @@ export function Landing({
             aria-live="polite"
             className="mt-8 h-5 text-sm font-medium tracking-wide text-muted-foreground/90"
           >
-            {listening ? 'Listening…' : 'Tap to speak'}
+            {statusLabel}
           </p>
+          {errorMessage ? (
+            <p
+              role="alert"
+              className="mt-2 max-w-xs text-pretty text-xs text-destructive"
+            >
+              {errorMessage}
+            </p>
+          ) : null}
         </div>
 
         {/* Suggested prompts */}
