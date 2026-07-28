@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useConversation } from '@elevenlabs/react'
 
 export type MuseVoiceStatus = 'idle' | 'connecting' | 'active'
@@ -17,7 +17,8 @@ interface UseMuseVoiceOptions {
  * Real-time voice conversation with the Muse ElevenLabs agent.
  *
  * Wraps ElevenLabs' `useConversation` and adds:
- *  - microphone permission handling,
+ *  - microphone permission handling (releasing the probe stream so it does not
+ *    contend with the SDK's own capture),
  *  - fetching the connection config from our server route (which supports both
  *    public and private agents), and
  *  - a simplified idle/connecting/active status plus a toggle().
@@ -30,17 +31,44 @@ export function useMuseVoice({
   onError,
 }: UseMuseVoiceOptions = {}) {
   const [error, setError] = useState<string | null>(null)
+  // Guards against a click firing start() twice before status updates.
+  const startingRef = useRef(false)
 
   const conversation = useConversation({
-    onMessage: ({ message, source }) => {
+    onConnect: ({ conversationId }) => {
+      console.log('[v0] voice connected:', conversationId)
+    },
+    onDisconnect: (details) => {
+      console.log('[v0] voice disconnected:', details)
+      startingRef.current = false
+    },
+    onStatusChange: ({ status }) => {
+      console.log('[v0] voice status:', status)
+    },
+    onModeChange: ({ mode }) => {
+      // "listening" = mic is open for you; "speaking" = Muse is talking.
+      console.log('[v0] voice mode:', mode)
+    },
+    onVadScore: ({ vadScore }) => {
+      // Non-zero while you speak. If this stays ~0 while talking, the agent is
+      // not receiving mic audio (device/permission issue).
+      if (vadScore > 0.5) console.log('[v0] voice VAD (hearing you):', vadScore)
+    },
+    onMessage: ({ message, source, role }) => {
       if (!message) return
-      if (source === 'user') onUserTranscript?.(message)
+      const isUser = role === 'user' || source === 'user'
+      console.log(`[v0] voice message (${isUser ? 'user' : 'muse'}):`, message)
+      if (isUser) onUserTranscript?.(message)
       else onAgentReply?.(message)
     },
-    onError: (message: string) => {
+    onError: (message: string, context?: unknown) => {
+      console.log('[v0] voice error:', message, context)
       const msg = message || 'Voice connection error.'
       setError(msg)
       onError?.(msg)
+    },
+    onDebug: (info: unknown) => {
+      console.log('[v0] voice debug:', info)
     },
   })
 
@@ -48,15 +76,21 @@ export function useMuseVoice({
     conversation
 
   const start = useCallback(async () => {
+    if (startingRef.current) return
+    startingRef.current = true
     setError(null)
 
-    // 1) Microphone permission — required to capture speech.
+    // 1) Prompt for mic permission, then immediately release the probe stream.
+    //    Holding these tracks open can starve the SDK's own capture, which is a
+    //    common cause of "connected but the agent can't hear me".
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true })
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
+      probe.getTracks().forEach((track) => track.stop())
     } catch {
       const msg = 'Microphone access is needed to talk with Muse.'
       setError(msg)
       onError?.(msg)
+      startingRef.current = false
       return
     }
 
@@ -65,14 +99,20 @@ export function useMuseVoice({
       const res = await fetch('/api/elevenlabs/signed-url', {
         cache: 'no-store',
       })
+      if (!res.ok) throw new Error(`Connection setup failed (${res.status}).`)
+
       const { agentId, signedUrl } = (await res.json()) as {
         agentId: string
         signedUrl: string | null
       }
 
       if (signedUrl) {
+        // Private agent: authenticated WebSocket connection.
+        console.log('[v0] voice starting: private (websocket)')
         await startSession({ signedUrl, connectionType: 'websocket' })
       } else {
+        // Public agent: voice connections use WebRTC, which captures the mic.
+        console.log('[v0] voice starting: public (webrtc), agent', agentId)
         await startSession({ agentId, connectionType: 'webrtc' })
       }
     } catch (err) {
@@ -80,8 +120,10 @@ export function useMuseVoice({
         err instanceof Error
           ? err.message
           : 'Could not start the voice session.'
+      console.log('[v0] voice start failed:', msg)
       setError(msg)
       onError?.(msg)
+      startingRef.current = false
     }
   }, [startSession, onError])
 
@@ -90,6 +132,8 @@ export function useMuseVoice({
       await endSession()
     } catch {
       // Ignore — the session is already closing or closed.
+    } finally {
+      startingRef.current = false
     }
   }, [endSession])
 
