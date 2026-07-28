@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Instrument_Serif } from 'next/font/google'
+import { VoiceProvider } from '@/components/muse/voice-provider'
 import './globals.css'
 
 const geistSans = Geist({
@@ -38,7 +39,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${instrumentSerif.variable} bg-background`}
     >
       <body className="font-sans antialiased">
-        {children}
+        <VoiceProvider>{children}</VoiceProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
