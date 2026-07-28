@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import useSWR from 'swr'
-import { Sparkles, Plus, ArrowUp } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Sidebar } from '@/components/muse/sidebar'
 import { Landing } from '@/components/muse/landing'
 import { Conversation, type Message } from '@/components/muse/conversation'
@@ -11,17 +11,10 @@ import { Closet } from '@/components/muse/closet'
 import { OutfitHistory } from '@/components/muse/outfit-history'
 import { ShoppingAssistant } from '@/components/muse/shopping-assistant'
 import { Settings } from '@/components/muse/settings'
-import { getStylistResponse, getWeather } from '@/lib/services'
+import { getWeather } from '@/lib/services'
 import { useMuseVoice } from '@/lib/use-muse-voice'
 
 const USER_NAME = 'Gabi'
-
-const SUGGESTIONS = [
-  'I have a rooftop dinner in SoHo tonight',
-  "I'm interviewing at a startup",
-  "I'm going to Paris for five days",
-  'I want to look expensive without buying anything',
-]
 
 function makeId() {
   return Math.random().toString(36).slice(2)
@@ -37,8 +30,6 @@ function greetingFor(date: Date) {
 export default function Page() {
   const [active, setActive] = useState('home')
   const [messages, setMessages] = useState<Message[]>([])
-  const [thinking, setThinking] = useState(false)
-  const [draft, setDraft] = useState('')
 
   // Time-of-day greeting resolved on the client to avoid hydration mismatch.
   // Defaults to "Good morning" so the first paint matches the calm intro.
@@ -77,38 +68,12 @@ export default function Page() {
           : 'Listening…'
         : 'Tap to speak'
 
-  function sendMessage(text: string) {
-    const trimmed = text.trim()
-    if (!trimmed) return
-    setDraft('')
-    setMessages((prev) => [
-      ...prev,
-      { id: makeId(), role: 'user', text: trimmed },
-    ])
-    setThinking(true)
-    const hasPriorReply = messages.some((m) => m.role === 'muse')
-    // Route through the stylist service so the reasoning can move server-side
-    // (LLM + weather + wardrobe memory) without touching this call site.
-    getStylistResponse({
-      message: trimmed,
-      hasPriorReply,
-      weather: weather ?? null,
-    }).then((reply) => {
-      setThinking(false)
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: makeId(),
-          role: 'muse',
-          text: reply.text,
-          transcript: reply.transcript,
-          reasoning: reply.reasoning,
-          outfits: reply.outfits,
-          shopping: reply.shopping,
-        },
-      ])
-    })
-  }
+  // Return to the voice-first opening screen and end any live session.
+  const goHome = useCallback(() => {
+    setActive('home')
+    setMessages([])
+    if (voice.status !== 'idle') voice.toggle()
+  }, [voice])
 
   // Voice-first landing: no chrome until the conversation begins.
   if (!started) {
@@ -120,8 +85,6 @@ export default function Page() {
           statusLabel={voiceLabel}
           errorMessage={voice.error}
           onToggleListening={voice.toggle}
-          suggestions={SUGGESTIONS}
-          onSelectSuggestion={sendMessage}
         />
       </div>
     )
@@ -130,7 +93,7 @@ export default function Page() {
   return (
     <div className="muse-app-in flex h-screen overflow-hidden bg-background text-foreground">
       <div className="muse-slide-in-left flex h-full">
-        <Sidebar active={active} onNavigate={setActive} />
+        <Sidebar active={active} onNavigate={setActive} onHome={goHome} />
       </div>
 
       <main className="relative flex flex-1 flex-col overflow-hidden">
@@ -146,11 +109,11 @@ export default function Page() {
 
         {active === 'closet' ? (
           <div key="closet" className="muse-fade-up flex-1 overflow-y-auto pt-8">
-            <Closet />
+            <Closet voice={voice} />
           </div>
         ) : active === 'history' ? (
           <div key="history" className="muse-fade-up flex-1 overflow-y-auto pt-8">
-            <OutfitHistory />
+            <OutfitHistory voice={voice} />
           </div>
         ) : active === 'shopping' ? (
           <div key="shopping" className="muse-fade-up flex-1 overflow-y-auto pt-8">
@@ -176,7 +139,7 @@ export default function Page() {
           </div>
           <button
             type="button"
-            onClick={() => setMessages([])}
+            onClick={goHome}
             className="group flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground/80 shadow-sm transition-all duration-300 hover:border-primary/30 hover:text-foreground active:scale-95"
           >
             <Plus
@@ -193,52 +156,27 @@ export default function Page() {
         <div className="flex flex-1 flex-col overflow-y-auto">
           <Conversation
             messages={messages}
-            thinking={thinking}
-            onFollowUp={sendMessage}
+            thinking={voice.status === 'connecting'}
           />
         </div>
 
-        {/* Composer / voice bar */}
-        <div className="px-6 pb-6">
-            <div className="muse-elev-lg mx-auto flex w-full max-w-3xl items-center gap-3 rounded-full border border-border bg-card/80 p-2 pl-5 backdrop-blur-md transition-all duration-300 focus-within:border-primary/35">
-              <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Sparkles size={16} className="text-primary" aria-hidden />
-              </span>
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === 'Enter' &&
-                    !e.nativeEvent.isComposing &&
-                    e.keyCode !== 229
-                  ) {
-                    e.preventDefault()
-                    sendMessage(draft)
-                  }
-                }}
-                placeholder="Speak or type to Muse…"
-                aria-label="Message Muse"
-                className="flex-1 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
-              />
-              {draft.trim() ? (
-                <button
-                  type="button"
-                  onClick={() => sendMessage(draft)}
-                  aria-label="Send message"
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 active:scale-95"
-                >
-                  <ArrowUp size={18} strokeWidth={2.2} aria-hidden />
-                </button>
-              ) : (
-                <MicOrb
-                  size="sm"
-                  listening={voiceActive}
-                  onClick={voice.toggle}
-                />
-              )}
-            </div>
+        {/* Voice bar — Muse is voice-first, so the mic is the only control */}
+        <div className="px-6 pb-8 pt-2">
+          <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-3">
+            <MicOrb size="sm" listening={voiceActive} onClick={voice.toggle} />
+            <p
+              aria-live="polite"
+              className="h-5 text-sm font-medium tracking-wide text-muted-foreground/90"
+            >
+              {voiceLabel}
+            </p>
+            {voice.error ? (
+              <p role="alert" className="text-pretty text-xs text-destructive">
+                {voice.error}
+              </p>
+            ) : null}
           </div>
+        </div>
           </>
         )}
       </main>

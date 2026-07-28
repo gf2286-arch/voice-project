@@ -13,6 +13,20 @@ interface UseMuseVoiceOptions {
   onError?: (message: string) => void
 }
 
+/** What we pass around to sub-screens (closet, history) to drive the agent. */
+export interface MuseVoiceControl {
+  status: MuseVoiceStatus
+  isSpeaking: boolean
+  error: string | null
+  toggle: () => void
+  /**
+   * Make Muse start talking about something specific. Connects the session if
+   * needed, primes the agent with `context`, then asks `prompt` so it replies
+   * out loud. Safe to call from a click handler.
+   */
+  speakAbout: (prompt: string, context?: string) => void
+}
+
 /**
  * Real-time voice conversation with the Muse ElevenLabs agent.
  *
@@ -20,8 +34,9 @@ interface UseMuseVoiceOptions {
  *  - microphone permission handling (releasing the probe stream so it does not
  *    contend with the SDK's own capture),
  *  - fetching the connection config from our server route (which supports both
- *    public and private agents), and
- *  - a simplified idle/connecting/active status plus a toggle().
+ *    public and private agents),
+ *  - a simplified idle/connecting/active status plus a toggle(), and
+ *  - `speakAbout()` so any screen can make Muse speak about a piece or look.
  *
  * Must be used inside the `<ConversationProvider>` mounted in the root layout.
  */
@@ -33,14 +48,29 @@ export function useMuseVoice({
   const [error, setError] = useState<string | null>(null)
   // Guards against a click firing start() twice before status updates.
   const startingRef = useRef(false)
+  // A prompt queued to send the moment the session connects.
+  const pendingRef = useRef<{ prompt: string; context?: string } | null>(null)
+  // Latest send functions, read at call time from inside SDK callbacks.
+  const sendUserMessageRef = useRef<(text: string) => void>(() => {})
+  const sendContextualRef = useRef<(text: string) => void>(() => {})
+
+  const flushPending = useCallback(() => {
+    const queued = pendingRef.current
+    if (!queued) return
+    pendingRef.current = null
+    if (queued.context) sendContextualRef.current(queued.context)
+    sendUserMessageRef.current(queued.prompt)
+  }, [])
 
   const conversation = useConversation({
     onConnect: ({ conversationId }) => {
       console.log('[v0] voice connected:', conversationId)
+      flushPending()
     },
     onDisconnect: (details) => {
       console.log('[v0] voice disconnected:', details)
       startingRef.current = false
+      pendingRef.current = null
     },
     onStatusChange: ({ status }) => {
       console.log('[v0] voice status:', status)
@@ -49,15 +79,9 @@ export function useMuseVoice({
       // "listening" = mic is open for you; "speaking" = Muse is talking.
       console.log('[v0] voice mode:', mode)
     },
-    onVadScore: ({ vadScore }) => {
-      // Non-zero while you speak. If this stays ~0 while talking, the agent is
-      // not receiving mic audio (device/permission issue).
-      if (vadScore > 0.5) console.log('[v0] voice VAD (hearing you):', vadScore)
-    },
     onMessage: ({ message, source, role }) => {
       if (!message) return
       const isUser = role === 'user' || source === 'user'
-      console.log(`[v0] voice message (${isUser ? 'user' : 'muse'}):`, message)
       if (isUser) onUserTranscript?.(message)
       else onAgentReply?.(message)
     },
@@ -67,13 +91,20 @@ export function useMuseVoice({
       setError(msg)
       onError?.(msg)
     },
-    onDebug: (info: unknown) => {
-      console.log('[v0] voice debug:', info)
-    },
   })
 
-  const { status: rawStatus, isSpeaking, startSession, endSession } =
-    conversation
+  const {
+    status: rawStatus,
+    isSpeaking,
+    startSession,
+    endSession,
+    sendUserMessage,
+    sendContextualUpdate,
+  } = conversation
+
+  // Keep the refs pointing at the current SDK send functions.
+  sendUserMessageRef.current = sendUserMessage
+  sendContextualRef.current = sendContextualUpdate
 
   const start = useCallback(async () => {
     if (startingRef.current) return
@@ -91,6 +122,7 @@ export function useMuseVoice({
       setError(msg)
       onError?.(msg)
       startingRef.current = false
+      pendingRef.current = null
       return
     }
 
@@ -129,10 +161,12 @@ if (conversationToken) {
       setError(msg)
       onError?.(msg)
       startingRef.current = false
+      pendingRef.current = null
     }
   }, [startSession, onError])
 
   const stop = useCallback(async () => {
+    pendingRef.current = null
     try {
       await endSession()
     } catch {
@@ -157,5 +191,19 @@ if (conversationToken) {
     }
   }, [rawStatus, start, stop])
 
-  return { status, isSpeaking, error, start, stop, toggle }
+  const speakAbout = useCallback(
+    (prompt: string, context?: string) => {
+      setError(null)
+      pendingRef.current = { prompt, context }
+      if (rawStatus === 'connected') {
+        flushPending()
+      } else if (rawStatus !== 'connecting') {
+        void start()
+      }
+      // If we're mid-connect, onConnect will flush the queued prompt.
+    },
+    [rawStatus, start, flushPending],
+  )
+
+  return { status, isSpeaking, error, start, stop, toggle, speakAbout }
 }
