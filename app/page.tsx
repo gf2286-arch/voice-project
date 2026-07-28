@@ -117,7 +117,7 @@ export default function Page() {
           </div>
         ) : active === 'shopping' ? (
           <div key="shopping" className="muse-fade-up flex-1 overflow-y-auto pt-8">
-            <ShoppingAssistant />
+            <ShoppingAssistant voice={voice} />
           </div>
         ) : active === 'settings' ? (
           <div key="settings" className="muse-fade-up flex-1 overflow-y-auto pt-8">

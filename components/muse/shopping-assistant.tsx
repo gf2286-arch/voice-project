@@ -12,10 +12,14 @@ import {
   Lightbulb,
   ArrowUp,
   Store,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ShoppingCard, type ShopItem } from '@/components/muse/shopping-card'
 import { ComingSoonChip } from '@/components/muse/coming-soon-chip'
+import { MicOrb } from '@/components/muse/mic-orb'
+import type { MuseVoiceControl } from '@/lib/use-muse-voice'
 
 type Verdict = 'buy' | 'maybe' | 'skip'
 
@@ -31,6 +35,8 @@ interface Evaluation {
   pairsWith: string[]
   styling: string[]
   watchOut?: string
+  /** Live product link when the piece came from a real Google Shopping match. */
+  buyLink?: string
 }
 
 const EVALUATIONS: Record<string, Evaluation> = {
@@ -413,6 +419,17 @@ function EvaluationView({ evaluation }: { evaluation: Evaluation }) {
               <span className="mt-1 inline-block text-sm font-semibold text-foreground">
                 {evaluation.price}
               </span>
+              {evaluation.buyLink ? (
+                <a
+                  href={evaluation.buyLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex w-fit items-center gap-1.5 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+                >
+                  View product
+                  <ExternalLink size={12} strokeWidth={2.2} aria-hidden />
+                </a>
+              ) : null}
             </div>
             <span
               className={cn(
@@ -624,33 +641,121 @@ const PICKS: { key: string; label: string; set: PickSet }[] = [
   },
 ]
 
-export function ShoppingAssistant() {
+export function ShoppingAssistant({ voice }: { voice: MuseVoiceControl }) {
   const [tab, setTab] = useState<'evaluate' | 'discover'>('evaluate')
   const [url, setUrl] = useState('')
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null)
   const [pickKey, setPickKey] = useState<string>(PICKS[0].key)
+  const [loading, setLoading] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const activePick = PICKS.find((p) => p.key === pickKey) ?? PICKS[0]
 
-  function evaluate(input: string) {
+  // Pull real product data from Google Shopping (via SerpAPI) for whatever the
+  // user pasted, then layer Muse's curated verdict on top of the live details.
+  async function evaluate(input: string) {
     const trimmed = input.trim()
     if (!trimmed) return
-    setEvaluation(resolveEvaluation(trimmed))
+    setLoading(true)
+    setNotice(null)
+    try {
+      const res = await fetch(
+        `/api/shopping/search?q=${encodeURIComponent(trimmed)}`,
+        { cache: 'no-store' },
+      )
+      const data = (await res.json()) as {
+        product: {
+          name: string
+          brand: string
+          price: string
+          image: string
+          link: string
+          query: string
+        } | null
+        error?: string
+      }
+
+      // Muse's verdict is derived from the resolved product name (or the link
+      // text), so her spoken read stays rich even when the catalog is live.
+      const base = resolveEvaluation(data.product?.name || trimmed)
+
+      if (data.product) {
+        setEvaluation({
+          ...base,
+          name: data.product.name,
+          brand: data.product.brand,
+          price: data.product.price,
+          image: data.product.image || base.image,
+          buyLink: data.product.link,
+        })
+      } else {
+        setEvaluation(base)
+        if (data.error === 'invalid_key' || data.error === 'missing_key') {
+          setNotice(
+            'Add a valid SerpAPI key (API_KEY) to pull live product details. Showing Muse’s read from the link text for now.',
+          )
+        } else if (data.error === 'no_results') {
+          setNotice(
+            'Couldn’t find that exact piece on Google Shopping — here’s Muse’s read from the link itself.',
+          )
+        }
+      }
+    } catch {
+      setEvaluation(resolveEvaluation(trimmed))
+      setNotice('Could not reach the shopping service just now.')
+    } finally {
+      setLoading(false)
+    }
   }
+
+  // Voice-first: let the user talk through a purchase with Muse. We hand the
+  // agent the shopping context so its spoken guidance matches this screen.
+  function askMuse() {
+    voice.speakAbout(
+      'I’m deciding whether to buy something. Ask me what I’m looking at and help me decide if it fits my wardrobe.',
+      'The user is on the Shopping Assistant. They evaluate potential purchases against their existing wardrobe of soft, tonal, cream-and-camel pieces. Help them judge versatility and whether a piece is worth buying.',
+    )
+  }
+
+  const micStatus =
+    voice.status === 'connecting'
+      ? 'Connecting…'
+      : voice.isSpeaking
+        ? 'Muse is speaking…'
+        : voice.status === 'active'
+          ? 'Listening…'
+          : 'Ask Muse out loud'
 
   return (
     <div className="mx-auto w-full max-w-5xl px-8 pb-16">
-      <header className="mb-6">
-        <h1 className="font-serif text-4xl text-foreground text-balance">
-          Shopping Assistant
-        </h1>
-        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground text-pretty">
-          Found something online? Paste the link and Muse will tell you whether
-          it earns a place in your closet. Or ask her to find pieces for a
-          specific moment.
-        </p>
-        <div className="mt-4">
-          <ComingSoonChip icon={Store} label="Sync Shopify wishlist" />
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <h1 className="font-serif text-4xl text-foreground text-balance">
+            Shopping Assistant
+          </h1>
+          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground text-pretty">
+            Found something online? Paste the link and Muse will pull the live
+            product details and tell you whether it earns a place in your
+            closet. Or ask her out loud.
+          </p>
+          <div className="mt-4">
+            <ComingSoonChip icon={Store} label="Sync Shopify wishlist" />
+          </div>
+        </div>
+
+        {/* Voice — talk a purchase through with Muse */}
+        <div className="flex shrink-0 flex-col items-center gap-2">
+          <MicOrb
+            size="sm"
+            listening={voice.status === 'active'}
+            onClick={askMuse}
+          />
+          <span
+            aria-live="polite"
+            className="text-xs font-medium tracking-wide text-muted-foreground"
+          >
+            {micStatus}
+          </span>
         </div>
       </header>
 
@@ -701,12 +806,24 @@ export function ShoppingAssistant() {
             <button
               type="button"
               onClick={() => evaluate(url)}
+              disabled={loading}
               aria-label="Evaluate link"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 active:scale-95"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
             >
-              <ArrowUp size={18} strokeWidth={2.2} aria-hidden />
+              {loading ? (
+                <Loader2 size={18} strokeWidth={2.2} className="animate-spin" aria-hidden />
+              ) : (
+                <ArrowUp size={18} strokeWidth={2.2} aria-hidden />
+              )}
             </button>
           </div>
+
+          {notice ? (
+            <p className="flex items-start gap-2 rounded-2xl border border-dashed border-border bg-muted/40 px-4 py-2.5 text-xs leading-relaxed text-muted-foreground">
+              <AlertTriangle size={13} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden />
+              {notice}
+            </p>
+          ) : null}
 
           {/* Example chips */}
           <div className="flex flex-wrap items-center gap-2">
