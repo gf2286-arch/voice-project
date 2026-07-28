@@ -22,17 +22,7 @@ export interface Message {
 interface ConversationProps {
   messages: Message[]
   thinking: boolean
-  onFollowUp?: (text: string) => void
 }
-
-const FOLLOW_UPS = [
-  'Hmm, not quite — something softer',
-  "Push me, go edgier",
-  'Make it more playful',
-  "I want to feel dressier",
-  'Actually, keep it easy',
-  "What would you wear?",
-]
 
 function VoiceWave({ playing }: { playing: boolean }) {
   return (
@@ -153,15 +143,12 @@ function MuseMessage({ message }: { message: Message }) {
   )
 }
 
-export function Conversation({ messages, thinking, onFollowUp }: ConversationProps) {
+export function Conversation({ messages, thinking }: ConversationProps) {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, thinking])
-
-  const lastMessage = messages[messages.length - 1]
-  const showFollowUps = !thinking && lastMessage?.role === 'muse' && onFollowUp
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">
@@ -201,21 +188,6 @@ export function Conversation({ messages, thinking, onFollowUp }: ConversationPro
               />
             ))}
           </div>
-        </div>
-      )}
-
-      {showFollowUps && (
-        <div className="muse-fade-up flex flex-wrap gap-2 pl-12">
-          {FOLLOW_UPS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => onFollowUp?.(f)}
-              className="rounded-full border border-border/70 bg-card/70 px-3.5 py-2 text-[13px] text-foreground/75 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-accent/40 hover:text-foreground hover:shadow-md active:scale-95"
-            >
-              {f}
-            </button>
-          ))}
         </div>
       )}
 

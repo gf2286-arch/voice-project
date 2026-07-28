@@ -21,20 +21,26 @@ const NAV = [
 interface SidebarProps {
   active: string
   onNavigate: (id: string) => void
+  onHome: () => void
 }
 
-export function Sidebar({ active, onNavigate }: SidebarProps) {
+export function Sidebar({ active, onNavigate, onHome }: SidebarProps) {
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col gap-2 border-r border-sidebar-border bg-sidebar px-4 py-6">
-      {/* Brand */}
-      <div className="flex items-center gap-2.5 px-2 pb-6">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/25">
+      {/* Brand — returns to the voice-first opening screen */}
+      <button
+        type="button"
+        onClick={onHome}
+        aria-label="Return to Muse home"
+        className="group mb-2 flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-all duration-300 hover:bg-sidebar-accent/40 active:scale-[0.98]"
+      >
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/25 transition-transform duration-300 group-hover:scale-105">
           <Sparkles size={18} strokeWidth={2} aria-hidden />
         </span>
         <span className="font-serif text-2xl leading-none text-sidebar-foreground">
           Muse
         </span>
-      </div>
+      </button>
 
       {/* Nav */}
       <nav className="flex flex-col gap-1" aria-label="Primary">

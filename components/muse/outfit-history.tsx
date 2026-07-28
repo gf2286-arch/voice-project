@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Sparkles, Star, RotateCcw, Scissors, Wand2 } from 'lucide-react'
+import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { MicOrb } from '@/components/muse/mic-orb'
+import type { MuseVoiceControl } from '@/lib/use-muse-voice'
 
 type Verdict = 'repeat' | 'refresh' | 'retire'
 
@@ -137,12 +139,10 @@ const VERDICT_STYLE: Record<Verdict, { label: string; className: string }> = {
   },
 }
 
-type QuestionKey = 'repeat' | 'change' | 'restyle'
-
-const QUESTIONS: { key: QuestionKey; label: string; icon: typeof RotateCcw }[] = [
-  { key: 'repeat', label: 'Should I repeat this?', icon: RotateCcw },
-  { key: 'change', label: 'What would you change?', icon: Scissors },
-  { key: 'restyle', label: 'Style it fresh for me', icon: Wand2 },
+const SPOKEN_PROMPTS = [
+  'Should I repeat this?',
+  'What would you change?',
+  'Style it fresh for me',
 ]
 
 function Stars({ rating }: { rating: number }) {
@@ -163,62 +163,81 @@ function Stars({ rating }: { rating: number }) {
   )
 }
 
-function Critique({ look }: { look: HistoryLook }) {
-  const [asked, setAsked] = useState<QuestionKey | null>(null)
+function VoiceCritique({
+  look,
+  voice,
+}: {
+  look: HistoryLook
+  voice: MuseVoiceControl
+}) {
+  const { speakAbout } = voice
+
+  // Give the agent everything it needs to answer accurately, then invite the
+  // user to ask out loud. The curated replies become the agent's grounding.
+  function beginReview() {
+    const context =
+      `The user is revisiting a past outfit: "${look.title}" (${look.occasion}, worn on ${look.date}). ` +
+      `Pieces: ${look.pieces.join(', ')}. They've worn it ${look.timesWorn} times and rated it ${look.rating} of 5. ` +
+      `Your verdict is "${look.verdict}". ` +
+      `If they ask whether to repeat it, say: ${look.replies.repeat} ` +
+      `If they ask what to change, say: ${look.replies.change} ` +
+      `If they ask how to restyle it, say: ${look.replies.restyle}`
+    speakAbout(
+      `Let's revisit my "${look.title}" look. Ask me what I'd like to know about it.`,
+      context,
+    )
+  }
+
+  // Prime Muse the moment a look is opened so the conversation is ready.
+  useEffect(() => {
+    beginReview()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [look.id])
+
+  const status =
+    voice.status === 'connecting'
+      ? 'Connecting to Muse…'
+      : voice.isSpeaking
+        ? 'Muse is speaking…'
+        : voice.status === 'active'
+          ? 'Listening — ask away'
+          : 'Tap to talk with Muse'
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
-        {QUESTIONS.map((q) => {
-          const Icon = q.icon
-          const active = asked === q.key
-          return (
-            <button
-              key={q.key}
-              type="button"
-              onClick={() => setAsked(q.key)}
-              className={cn(
-                'flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-300 active:scale-95',
-                active
-                  ? 'border-primary bg-primary text-primary-foreground shadow-md shadow-primary/20'
-                  : 'border-border bg-card text-foreground/80 hover:border-primary/30 hover:bg-accent/40',
-              )}
-            >
-              <Icon size={14} strokeWidth={2} aria-hidden />
-              {q.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {asked ? (
-        <div className="muse-fade-up flex items-start gap-3">
-          <span
-            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
-            aria-hidden
-          >
-            <Sparkles size={16} strokeWidth={2} />
-          </span>
-          <div className="muse-glass muse-elev rounded-3xl rounded-tl-lg border border-border/60 px-5 py-4">
-            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Sparkles size={12} strokeWidth={2} className="text-primary" aria-hidden />
-              Muse
-            </div>
-            <p className="text-[15px] leading-relaxed text-foreground text-pretty">
-              {look.replies[asked]}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <p className="rounded-2xl border border-dashed border-border bg-secondary/30 px-4 py-3 text-sm text-muted-foreground">
-          Ask Muse what she thinks — she remembers every time you&apos;ve worn this.
+    <div className="flex flex-col items-center gap-4 rounded-2xl border border-primary/20 bg-primary/5 p-6 text-center">
+      <MicOrb
+        size="sm"
+        listening={voice.status === 'active'}
+        onClick={beginReview}
+      />
+      <p aria-live="polite" className="text-sm font-medium text-foreground">
+        {status}
+      </p>
+      <div className="flex flex-col items-center gap-1.5">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Try asking
         </p>
-      )}
+        <ul className="flex flex-wrap justify-center gap-2">
+          {SPOKEN_PROMPTS.map((q) => (
+            <li
+              key={q}
+              className="rounded-full border border-border/70 bg-card/70 px-3.5 py-1.5 text-[13px] text-foreground/70"
+            >
+              &ldquo;{q}&rdquo;
+            </li>
+          ))}
+        </ul>
+      </div>
+      {voice.error ? (
+        <p role="alert" className="max-w-xs text-pretty text-xs text-destructive">
+          {voice.error}
+        </p>
+      ) : null}
     </div>
   )
 }
 
-export function OutfitHistory() {
+export function OutfitHistory({ voice }: { voice: MuseVoiceControl }) {
   const [selectedId, setSelectedId] = useState<string>(LOOKS[0].id)
   const selected = LOOKS.find((l) => l.id === selectedId) ?? LOOKS[0]
   const verdict = VERDICT_STYLE[selected.verdict]
@@ -327,7 +346,7 @@ export function OutfitHistory() {
 
             <div className="h-px bg-border" />
 
-            <Critique key={selected.id} look={selected} />
+            <VoiceCritique key={selected.id} look={selected} voice={voice} />
           </div>
         </div>
       </div>

@@ -2,16 +2,22 @@
 
 import { useEffect } from 'react'
 import Image from 'next/image'
-import { CalendarClock, Sparkles, Tag, X } from 'lucide-react'
+import { CalendarClock, Tag, X } from 'lucide-react'
 import type { ClosetItem } from '@/components/muse/closet-item-card'
+import { MicOrb } from '@/components/muse/mic-orb'
+import type { MuseVoiceControl } from '@/lib/use-muse-voice'
 
 export function ClosetItemDetail({
   item,
+  voice,
   onClose,
 }: {
   item: ClosetItem | null
+  voice: MuseVoiceControl
   onClose: () => void
 }) {
+  const { speakAbout } = voice
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -26,7 +32,30 @@ export function ClosetItemDetail({
     }
   }, [item, onClose])
 
+  // The moment a piece is opened, Muse starts talking about how to style it.
+  useEffect(() => {
+    if (!item) return
+    const context =
+      `The user is viewing their ${item.name} — a ${item.color} ${item.category} for ${item.season}. ` +
+      `Styling notes: ${item.museAdvice} ` +
+      `They last wore it on ${item.lastWorn.date} for ${item.lastWorn.occasion}, ` +
+      `paired with ${item.lastWorn.pairedWith.join(' and ')}.`
+    const prompt = `How should I style my ${item.name}? Give me a couple of quick suggestions out loud.`
+    speakAbout(prompt, context)
+    // Only re-fire when the opened piece changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id])
+
   if (!item) return null
+
+  const voiceStatus =
+    voice.status === 'connecting'
+      ? 'Connecting to Muse…'
+      : voice.isSpeaking
+        ? 'Muse is styling this piece…'
+        : voice.status === 'active'
+          ? 'Listening — talk back anytime'
+          : 'Tap to hear Muse'
 
   return (
     <div
@@ -147,15 +176,34 @@ export function ClosetItemDetail({
               </div>
             </section>
 
-            {/* Muse advice */}
-            <section className="rounded-2xl border border-primary/25 bg-primary/10 p-5">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Sparkles size={16} className="text-primary" aria-hidden />
-                Muse recommends
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-foreground/80 text-pretty">
-                {item.museAdvice}
+            {/* Muse advice — spoken aloud, voice-first */}
+            <section className="flex flex-col items-center gap-3 rounded-2xl border border-primary/25 bg-primary/10 p-6 text-center">
+              <MicOrb
+                size="sm"
+                listening={voice.status === 'active'}
+                onClick={() => {
+                  const context =
+                    `The user is viewing their ${item.name} — a ${item.color} ${item.category} for ${item.season}. ` +
+                    `Styling notes: ${item.museAdvice} ` +
+                    `They last wore it on ${item.lastWorn.date} for ${item.lastWorn.occasion}, ` +
+                    `paired with ${item.lastWorn.pairedWith.join(' and ')}.`
+                  speakAbout(
+                    `How should I style my ${item.name}? Give me a couple of quick suggestions out loud.`,
+                    context,
+                  )
+                }}
+              />
+              <p
+                aria-live="polite"
+                className="text-sm font-medium text-foreground"
+              >
+                {voiceStatus}
               </p>
+              {voice.error ? (
+                <p className="max-w-xs text-pretty text-xs leading-relaxed text-foreground/70">
+                  {item.museAdvice}
+                </p>
+              ) : null}
             </section>
 
             {/* Tags */}

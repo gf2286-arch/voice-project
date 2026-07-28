@@ -1,7 +1,6 @@
 'use client'
 
 import { MicOrb } from './mic-orb'
-import { cn } from '@/lib/utils'
 
 interface LandingProps {
   greeting: string
@@ -9,8 +8,6 @@ interface LandingProps {
   statusLabel: string
   errorMessage?: string | null
   onToggleListening: () => void
-  suggestions: string[]
-  onSelectSuggestion: (text: string) => void
 }
 
 export function Landing({
@@ -19,8 +16,6 @@ export function Landing({
   statusLabel,
   errorMessage,
   onToggleListening,
-  suggestions,
-  onSelectSuggestion,
 }: LandingProps) {
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden px-6 py-16">
@@ -60,23 +55,6 @@ export function Landing({
               {errorMessage}
             </p>
           ) : null}
-        </div>
-
-        {/* Suggested prompts */}
-        <div className="muse-fade-up mt-14 flex max-w-2xl flex-wrap items-center justify-center gap-2.5 [animation-delay:420ms]">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onSelectSuggestion(s)}
-              className={cn(
-                'rounded-full border border-border/70 bg-card/60 px-4 py-2.5 text-sm text-foreground/70 shadow-sm backdrop-blur-sm transition-all duration-200',
-                'hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:text-foreground hover:shadow-md active:scale-95',
-              )}
-            >
-              {s}
-            </button>
-          ))}
         </div>
       </div>
     </div>

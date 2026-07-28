@@ -6,6 +6,7 @@ import { Camera, Search, Shirt, X, LayoutGrid, Aperture } from 'lucide-react'
 import { ClosetItemCard, type ClosetItem } from '@/components/muse/closet-item-card'
 import { ClosetItemDetail } from '@/components/muse/closet-item-detail'
 import { ComingSoonChip } from '@/components/muse/coming-soon-chip'
+import type { MuseVoiceControl } from '@/lib/use-muse-voice'
 
 interface ClosetSection {
   id: string
@@ -793,7 +794,7 @@ const SECTIONS: ClosetSection[] = [
   },
 ]
 
-export function Closet() {
+export function Closet({ voice }: { voice: MuseVoiceControl }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploads, setUploads] = useState<{ id: string; url: string }[]>([])
   const [query, setQuery] = useState('')
@@ -984,7 +985,11 @@ export function Closet() {
         ))
       )}
 
-      <ClosetItemDetail item={selected} onClose={() => setSelected(null)} />
+      <ClosetItemDetail
+        item={selected}
+        voice={voice}
+        onClose={() => setSelected(null)}
+      />
     </div>
   )
 }
