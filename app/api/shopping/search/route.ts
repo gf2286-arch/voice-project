@@ -69,7 +69,8 @@ function deriveQuery(input: string): string {
 }
 
 export async function GET(request: Request) {
-  const apiKey = process.env.API_KEY
+  // Prefer the dedicated SerpAPI variable; fall back to API_KEY for back-compat.
+  const apiKey = process.env.SERPAPI_API_KEY ?? process.env.API_KEY
   const { searchParams } = new URL(request.url)
   const input = searchParams.get('q') ?? ''
 
