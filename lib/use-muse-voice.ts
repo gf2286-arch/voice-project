@@ -96,16 +96,21 @@ export function useMuseVoice({
 
     // 2) Ask the server how to connect (public agent id or signed URL).
     try {
-      const res = await fetch('/api/elevenlabs/signed-url', {
-        cache: 'no-store',
-      })
-      if (!res.ok) throw new Error(`Connection setup failed (${res.status}).`)
+      const res = await fetch('/api/elevenlabs/signed-url', { cache: 'no-store' })
+if (!res.ok) throw new Error(`Connection setup failed (${res.status}).`)
 
-      const { agentId, signedUrl } = (await res.json()) as {
-        agentId: string
-        signedUrl: string | null
-      }
+const { agentId, conversationToken } = (await res.json()) as {
+  agentId: string
+  conversationToken: string | null
+}
 
+if (conversationToken) {
+  console.log('[v0] voice starting: private (webrtc)')
+  await startSession({ conversationToken, connectionType: 'webrtc' })
+} else {
+  console.log('[v0] voice starting: public (webrtc), agent', agentId)
+  await startSession({ agentId, connectionType: 'webrtc' })
+}
       if (signedUrl) {
         // Private agent: authenticated WebSocket connection.
         console.log('[v0] voice starting: private (websocket)')
